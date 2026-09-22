@@ -331,6 +331,7 @@ function diaDe(iso){ return +iso.slice(8,10); }
 function dataObj(iso){ var a=iso.split('-'); return new Date(+a[0], +a[1]-1, +a[2]); }
 function isoDe(dt){ return dt.getFullYear()+'-'+p2(dt.getMonth()+1)+'-'+p2(dt.getDate()); }
 function somaDias(iso, n){ var d=dataObj(iso); d.setDate(d.getDate()+n); return isoDe(d); }
+function diasEntre(a, b){ return Math.round((dataObj(b)-dataObj(a))/86400000); }
 function somaMeses(ym, n){
   var a=+ym.slice(0,4), m=+ym.slice(5,7)-1+n;
   a += Math.floor(m/12); m=((m%12)+12)%12;
@@ -359,7 +360,13 @@ function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
 
 /* ==================== estado ==================== */
 var db=null, baixar=null;
-var cfg = {saldoInicial:0, reserva:500, horizonte:90, fechados:{}};
+var cfg = {saldoInicial:0, reserva:500, horizonteData:null, fechados:{}};
+/* horizonteData é a data-alvo até onde olhamos à frente; se ainda não foi
+   escolhida, nasce em hoje+90 dias na primeira vez que é usada. */
+function alvoHorizonte(){
+  if(!cfg.horizonteData) cfg.horizonteData = somaDias(hojeISO(), 90);
+  return cfg.horizonteData;
+}
 var cfgV = null, lancV = {}, prevV = {};
 var LANC = {};   // ym -> [ {i,d,v,n,o,prov} ]
 var PREV = {};   // ym -> [ {i,d,v,n,rec,pag,sit,g,p,ps,liga} ]
@@ -447,7 +454,7 @@ function comprometidoAte(base, lim){
   return acum;
 }
 function diariaDe(base, saldoBase){
-  var H = cfg.horizonte||90, melhor=null, dia=1;
+  var H = Math.max(1, diasEntre(base, alvoHorizonte())), melhor=null, dia=1;
   for(var d=1; d<=H; d++){
     var s = saldoBase + comprometidoAte(base, somaDias(base,d));
     var r = (s - (cfg.reserva||0))/d;
@@ -549,11 +556,11 @@ function renderHoje(){
     +'</div>'
     +'<div class="ajustes">'
     +'<label>Reserva <input class="pq" id="c-reserva" value="'+cfg.reserva+'" inputmode="decimal"></label>'
-    +'<label>Olhar à frente <input class="pq" id="c-horizonte" value="'+(cfg.horizonte||90)+'" inputmode="numeric"> dias</label>'
+    +'<label>Olhar até <input class="dt" id="c-horizonte" type="date" value="'+alvoHorizonte()+'"></label>'
     +'</div></div>');
 
   h.push('<div class="cartao"><div class="cab"><h2>Saldo projetado</h2>'
-    +'<span class="soma">'+(cfg.horizonte||90)+' dias</span></div>'
+    +'<span class="soma">até '+fmtCurto(alvoHorizonte())+'</span></div>'
     +'<div class="legenda"><span><i style="background:var(--accent)"></i>gastando a diária</span>'
     +'<span><i style="background:var(--warn)"></i>reserva intocável</span></div>'
     +'<div style="padding:6px 10px 12px"><svg id="grafico" viewBox="0 0 720 230" role="img"'
@@ -579,7 +586,7 @@ function renderHoje(){
 
 function desenhar(d){
   var el = document.getElementById('grafico'); if(!el) return;
-  var hoje = hojeISO(), saldo = saldoAte(hoje), H = cfg.horizonte||90;
+  var hoje = hojeISO(), saldo = saldoAte(hoje), H = Math.max(1, diasEntre(hoje, alvoHorizonte()));
   var taxa = Math.max(d.r, 0), res = cfg.reserva||0, pts = [];
   for(var k=0; k<=H; k++){
     pts.push(saldo + comprometidoAte(hoje, somaDias(hoje,k)) - taxa*k);
@@ -1033,7 +1040,7 @@ function construirCSV(){
   linhas.push([''+ (Object.keys(LANC).sort()[0]||hojeISO().slice(0,7)) +'-01','receita','Esporádico',
     'Saldo inicial', v2(cfg.saldoInicial),'manual','','','','','','',''].join(';'));
   linhas.push(['1900-01-01','receita','Esporádico','Config','0,00','config','','','','','','',
-    JSON.stringify({reserva:cfg.reserva, horizonte:cfg.horizonte, fechados:cfg.fechados||{}})].join(';'));
+    JSON.stringify({reserva:cfg.reserva, horizonteData:alvoHorizonte(), fechados:cfg.fechados||{}})].join(';'));
   tudo.forEach(function(x){
     linhas.push([x.d, x.v>0?'receita':'despesa','Esporádico', String(x.n).replace(/;/g,' '),
       v2(x.v), x.o, x.o==='nubank'?x.i:'', '','','','','', x.v<0?'À vista':''].join(';'));
@@ -1139,7 +1146,7 @@ function mostrarApp(){
    escolher, em vez de ficar só na memória até o primeiro Exportar. */
 async function novoLivro(){
   LANC = {}; PREV = {};
-  cfg = {saldoInicial:0, reserva:500, horizonte:90, fechados:{}};
+  cfg = {saldoInicial:0, reserva:500, horizonteData:null, fechados:{}};
   var csv = construirCSV();
   var salvou = false;
   if(baixar){
@@ -1164,8 +1171,11 @@ async function abrirCSV(texto, nomeArquivo){
   msg.textContent = '';
   LANC = lido.lanc; PREV = lido.prev;
   var ex = lido.configExtra || {};
+  /* migração: CSV antigo guardava "horizonte" em nº de dias a partir de hoje;
+     o novo guarda horizonteData, uma data-alvo fixa. */
+  var horizonteData = ex.horizonteData || (ex.horizonte!=null ? somaDias(hojeISO(), ex.horizonte) : null);
   cfg = {saldoInicial: lido.saldoInicial||0, reserva: (ex.reserva!=null?ex.reserva:500),
-         horizonte: (ex.horizonte!=null?ex.horizonte:90), fechados: ex.fechados||{}};
+         horizonteData: horizonteData, fechados: ex.fechados||{}};
   mostrarApp();
   var n = todosLanc().length, saldo = saldoAte(hojeISO());
   toast('Aberto'+(nomeArquivo?' "'+nomeArquivo+'"':'')+' — '+n
@@ -1278,7 +1288,8 @@ document.addEventListener('change', async function(ev){
   if(el.dataset && el.dataset.sit){ await definirSit(el.dataset.sit, el.value); return; }
   if(el.id==='c-reserva'){ cfg.reserva = Math.max(0, lerValor(el.value)||0); render(); await gravarCfg(); return; }
   if(el.id==='c-horizonte'){
-    cfg.horizonte = Math.max(7, Math.min(365, Math.round(+el.value)||90));
+    var minData = somaDias(hojeISO(), 1);
+    cfg.horizonteData = (/^\d{4}-\d{2}-\d{2}$/.test(el.value) && el.value > minData) ? el.value : minData;
     render(); await gravarCfg(); return;
   }
   if(el.id==='c-inicial'){ cfg.saldoInicial = lerValor(el.value)||0; render(); await gravarCfg(); return; }
