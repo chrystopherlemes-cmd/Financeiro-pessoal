@@ -123,6 +123,7 @@
   input.vl{width:10ch; text-align:right}
   input.dt{width:11ch}
   input.pq{width:7ch; text-align:right}
+  input.dtl{width:15ch}
 
   .prev{border-color:var(--warn-line)}
   .prev .cab{background:var(--warn-soft); border-bottom-color:var(--warn-line)}
@@ -556,7 +557,7 @@ function renderHoje(){
     +'</div>'
     +'<div class="ajustes">'
     +'<label>Reserva <input class="pq" id="c-reserva" value="'+cfg.reserva+'" inputmode="decimal"></label>'
-    +'<label>Olhar até <input class="dt" id="c-horizonte" type="date" value="'+alvoHorizonte()+'"></label>'
+    +'<label>Olhar até <input class="dtl" id="c-horizonte" type="date" value="'+alvoHorizonte()+'"></label>'
     +'</div></div>');
 
   h.push('<div class="cartao"><div class="cab"><h2>Saldo projetado</h2>'
